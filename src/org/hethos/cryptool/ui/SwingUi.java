@@ -36,6 +36,8 @@ import org.hethos.cryptool.util.crypto;
 
 import javax.swing.JSpinner;
 import javax.swing.SpinnerNumberModel;
+import javax.xml.bind.DatatypeConverter;
+import javax.swing.JCheckBox;
 
 public class SwingUi extends JFrame {
 
@@ -49,6 +51,8 @@ public class SwingUi extends JFrame {
 	private JSpinner sThreads;
 	private CrackThread cracker;
 	private JLabel lblProgress;
+	private JCheckBox chckbxHex;
+	private JSpinner spnBlockSize;
 
 	/**
 	 * Create the frame.
@@ -83,7 +87,8 @@ public class SwingUi extends JFrame {
 		btnNewButton.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent arg0) {
 				try {
-					String Key = crypto.GenKey();
+					byte[] KeyData = crypto.GenKey("Blowfish",40);
+					String Key = DatatypeConverter.printHexBinary(KeyData);
 					System.out.println("Generated Key:"+Key);
 				    taLog.append("Generated key:"+Key+"\r\n");
 				    tfEncrypt_Key.setText(Key);
@@ -128,7 +133,13 @@ public class SwingUi extends JFrame {
 			public void actionPerformed(ActionEvent arg0) {
 				try {
 					//We are assuming non binary input in this case.
-					String CipherText = crypto.Encrypt(Base64.encodeBytes(tfEncrypt_clear.getText().getBytes()), tfEncrypt_Key.getText());
+					byte[] CipherData;
+					if (chckbxHex.isSelected()){
+						CipherData = crypto.Encrypt(DatatypeConverter.parseHexBinary(tfEncrypt_clear.getText()), DatatypeConverter.parseHexBinary( tfEncrypt_Key.getText()));						
+					} else {
+						CipherData = crypto.Encrypt(tfEncrypt_clear.getText().getBytes(), DatatypeConverter.parseHexBinary( tfEncrypt_Key.getText()));
+					}
+					String CipherText = DatatypeConverter.printHexBinary(CipherData);
 					Log("cipher:"+CipherText);
 					tfDecrypt_cipher.setText(CipherText);
 					tfCrack_Cipher.setText(CipherText);
@@ -147,20 +158,21 @@ public class SwingUi extends JFrame {
 				} catch (BadPaddingException e) {
 					Log("Bad Padding");
 					e.printStackTrace();
-				} catch (IOException e) {
-					Log("Base64 decode fail");					
-					e.printStackTrace();
-				}			
+				}		
 			}
 		});
 		btnEncrypt.setBounds(10, 67, 89, 23);
 		pnlEncrypt.add(btnEncrypt);
 		
+		chckbxHex = new JCheckBox("Hex");
+		chckbxHex.setBounds(360, 7, 53, 23);
+		pnlEncrypt.add(chckbxHex);
+		
 		JPanel pnlDecrypt = new JPanel();
 		tabbedPane.addTab("Decrypt", null, pnlDecrypt, null);
 		pnlDecrypt.setLayout(null);
 		
-		JLabel lblCipherTextbase = new JLabel("Cipher Text (base64):");
+		JLabel lblCipherTextbase = new JLabel("Cipher Text (hex):");
 		lblCipherTextbase.setBounds(10, 11, 108, 14);
 		pnlDecrypt.add(lblCipherTextbase);
 		lblCipherTextbase.setHorizontalAlignment(SwingConstants.RIGHT);
@@ -184,14 +196,11 @@ public class SwingUi extends JFrame {
 		btnDecrypt.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
 				try {
-					String Clear64 = crypto.Decrypt(tfDecrypt_cipher.getText(), tfDecrypt_key.getText());
-					Log("base64 cleartext:"+Clear64);
-					Log("Clear text:"+new String(Base64.decode(Clear64)));
+					byte[] ClearData = crypto.Decrypt(DatatypeConverter.parseHexBinary(tfDecrypt_cipher.getText()), DatatypeConverter.parseHexBinary(tfDecrypt_key.getText()));
+					Log("base64 cleartext:"+DatatypeConverter.printHexBinary(ClearData));
+					Log("Clear text:"+new String(ClearData));
 				} catch (InvalidKeyException e1) {
 					Log("Invalid key");
-					e1.printStackTrace();
-				} catch (IOException e1) {
-					Log("Base64 Decode failure");
 					e1.printStackTrace();
 				} catch (NoSuchAlgorithmException e1) {
 					Log("No such algorithm");
@@ -229,7 +238,7 @@ public class SwingUi extends JFrame {
 		btnCrack.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
 				//start the cracking thread
-		        cracker = new CrackThread(TheUi, tfCrack_Cipher.getText(),(Integer)sThreads.getValue());
+		        cracker = new CrackThread(TheUi, tfCrack_Cipher.getText(),(Integer)sThreads.getValue(),(short)5,(short)spnBlockSize.getValue());
 		        Thread CrackingThread = new Thread(cracker);
 		        CrackingThread.start();
 			}
@@ -243,7 +252,7 @@ public class SwingUi extends JFrame {
 		
 		sThreads = new JSpinner();
 		sThreads.setModel(new SpinnerNumberModel(new Integer(8), new Integer(0), null, new Integer(1)));
-		sThreads.setBounds(70, 30, 29, 20);
+		sThreads.setBounds(70, 30, 39, 20);
 		pnlBruteForce.add(sThreads);
 		
 		JButton btnStop = new JButton("Stop");
@@ -256,8 +265,17 @@ public class SwingUi extends JFrame {
 		pnlBruteForce.add(btnStop);
 		
 		lblProgress = new JLabel("");
-		lblProgress.setBounds(109, 36, 300, 14);
+		lblProgress.setBounds(10, 57, 214, 14);
 		pnlBruteForce.add(lblProgress);
+		
+		spnBlockSize = new JSpinner();
+		spnBlockSize.setModel(new SpinnerNumberModel(new Short((short) 1), new Short((short) 1), null, new Short((short) 1)));
+		spnBlockSize.setBounds(218, 30, 29, 20);
+		pnlBruteForce.add(spnBlockSize);
+		
+		JLabel lblNewLabel = new JLabel("Block Size (bytes)");
+		lblNewLabel.setBounds(119, 33, 89, 14);
+		pnlBruteForce.add(lblNewLabel);
 	}
 	
 	public void Log(String Message) {
@@ -265,7 +283,7 @@ public class SwingUi extends JFrame {
 	    taLog.append(Message+"\r\n");
 	}
 	public void CrackProgress(double percentProgress,double keysPerSecond){
-		lblProgress.setText(String.format("%1$,.2f%%, %1$,.2f Keys/s",percentProgress,keysPerSecond));
-		System.out.println(String.format("%1$,.2f%%, %1$,.2f Keys/s",percentProgress,keysPerSecond));
+		lblProgress.setText(String.format("%,.2f%%, %,.2f Keys/s",percentProgress,keysPerSecond));
+		System.out.println(String.format("%,.2f%%, %,.2f Keys/s",percentProgress,keysPerSecond));
 	}
 }

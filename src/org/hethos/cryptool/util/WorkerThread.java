@@ -3,10 +3,12 @@ package org.hethos.cryptool.util;
 import java.io.IOException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
+import java.util.Arrays;
 
 import javax.crypto.BadPaddingException;
 import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.NoSuchPaddingException;
+import javax.swing.SwingUtilities;
 
 import org.hethos.cryptool.ui.SwingUi;
 
@@ -14,12 +16,14 @@ public class WorkerThread implements Runnable {
     
     private byte[] Cipher;
     private byte[] Key;
-    private SwingUi Ui;
+    private CrackThread Ui;
+    private short keyBytes;
     
-    public WorkerThread(byte[] Cipher, byte[] Key, SwingUi Ui){
+    public WorkerThread(byte[] Cipher, byte[] Key, CrackThread Ui, short keyBytes){
         this.Cipher=Cipher;
         this.Key=Key;
         this.Ui=Ui;
+        this.keyBytes = keyBytes;
     }
 
     @Override
@@ -29,26 +33,38 @@ public class WorkerThread implements Runnable {
         //System.out.println(Thread.currentThread().getName()+" End.");
     }
 
-    private void processCommand() {
-        try {
-			byte[] result = crypto.Decrypt(this.Cipher, this.Key);
-			//Ui.Log("Found key:"+Base64.encodeBytes(this.Key)+" Decoded to (base64):"+Base64.encodeBytes(result));
-			//Ui.Log("Decoded to (base64):"+Base64.encodeBytes(result));
-			//com.sun.org.apache.xml.internal.security.Init.init();
-			//Ui.Log("Decoded to (plain):"+new String(result));
-			// TODO if we are sure this is the key then stop processing thread pool.
-			if (new String(result)=="Hello") {
-				System.out.println("key found:"+Base64.encodeBytes(this.Key));
-			}
-		} catch (InvalidKeyException | NoSuchAlgorithmException
-				| NoSuchPaddingException | IllegalBlockSizeException
-				| BadPaddingException e) {
-			// TODO Auto-generated catch block
-			//e.printStackTrace();
-			// Do nothing, not a valid key
-		}
+    private void processCommand() {  	
+    	byte[] tempKey= Arrays.copyOf(Key, Key.length +1);
+    	if (tempKey.length >= keyBytes) {
+    		for (int i = 0;i<256;i++){
+    	        try {
+    	        	tempKey[Key.length] = (byte) i;
+    	        	
+    				byte[] result = crypto.Decrypt(Cipher, tempKey);
+    				if (IsPlainText(result)) {
+    					Ui.foundKey( Arrays.copyOf(tempKey, tempKey.length));
+    				}
+    			} catch (InvalidKeyException | NoSuchAlgorithmException
+    					| NoSuchPaddingException | IllegalBlockSizeException
+    					| BadPaddingException e) {
+    				// TODO Auto-generated catch block
+    				//e.printStackTrace();
+    				// Do nothing, not a valid key
+    			}
+        	}
+    	} else {
+    		for (int i = 0;i<256;i++){
+	        	tempKey[Key.length] = (byte) i;
+    			WorkerThread wThread = new WorkerThread(Cipher,tempKey,Ui,keyBytes);
+    			wThread.run();
+    		}
+         	
+     	}
     }
-
+    public boolean IsPlainText(byte[] result){
+    	//TODO this will be a lot more complex
+    	return (new String(result)).equals("Hello");
+    }
     @Override
     public String toString(){
         return Base64.encodeBytes(this.Key);
